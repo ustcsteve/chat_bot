@@ -1,268 +1,116 @@
-"""
-Complete Production AI Agent
-Memory + Secure Code Execution + Full Observability
-Refactored to use langgraph StateGraph orchestration.
-"""
 import csv
 import os
-from typing import Any, List
-
+import operator
+from typing import List, Annotated, Union
 from typing_extensions import NotRequired, TypedDict
 
-from bedrock_agentcore.memory.integrations.strands.config import (
-    AgentCoreMemoryConfig,
-    RetrievalConfig,
-)
-from langchain_aws import BedrockEmbeddings
-from bedrock_agentcore.memory.integrations.strands.session_manager import (
-    AgentCoreMemorySessionManager,
-)
+from langchain_aws import BedrockEmbeddings, ChatBedrock
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
-
-from strands import Agent
 
 from langgraph.graph import END, START, StateGraph
 from langchain_core.tools import tool
 from langchain_core.documents import Document
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-# from strands_tools.code_interpreter import AgentCoreCodeInterpreter
 
 app = BedrockAgentCoreApp()
 
-MEMORY_ID = os.getenv("BEDROCK_AGENTCORE_MEMORY_ID")
+# Configuration
 REGION = os.getenv("AWS_REGION", "us-east-1")
 MODEL_ID = "us.amazon.nova-lite-v1:0"
 
-_agent: Agent | None = None
-
-
-class AgentState(TypedDict):
-    prompt: str
-    actor_id: str
-    session_id: str
-    response: NotRequired[str]
-    error: NotRequired[str]
-
-
-class AgentOutput(TypedDict):
-    response: str
-
+# --- 1. Knowledge Base (FAISS) ---
 def load_faq_csv(path: str) -> List[Document]:
     docs = []
+    if not os.path.exists(path):
+        return [Document(page_content="No policy data available.")]
     with open(path, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            q = row["question"].strip()
-            a = row["answer"].strip()
-            docs.append(Document(page_content=f"Q: {q}\nA: {a}"))
+            docs.append(Document(page_content=f"Q: {row['question']}\nA: {row['answer']}"))
     return docs
 
+embeddings = BedrockEmbeddings(model_id="amazon.titan-embed-text-v1", region_name=REGION)
+faq_docs = load_faq_csv("./lauki_qna.csv")
+splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+chunks = splitter.split_documents(faq_docs)
+faq_store = FAISS.from_documents(chunks, embeddings)
 
-docs = load_faq_csv("./lauki_qna.csv")
-emb = BedrockEmbeddings(
-    model_id="amazon.titan-embed-text-v1",
-    region_name=REGION
-)
-
-splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=0)
-chunks = splitter.split_documents(docs)
-faq_store = FAISS.from_documents(chunks, emb)
-
+# --- 2. Banking Tools ---
+@tool
+def get_balance(account_type: str = "checking") -> str:
+    """Retrieve the current balance for checking or savings accounts."""
+    mock_balances = {"checking": "$4,250.60", "savings": "$12,100.00"}
+    return f"Your {account_type} balance is {mock_balances.get(account_type.lower(), 'not found')}."
 
 @tool
-def search_faq(query: str) -> str:
-    """Search the FAQ knowledge base for relevant information.
-    Use this tool when the user asks questions about products, services, or policies.
-    
-    Args:
-        query: The search query to find relevant FAQ entries
-        
-    Returns:
-        Relevant FAQ entries that might answer the question
-    """
-    results = faq_store.similarity_search(query, k=3)
-    
-    if not results:
-        return "No relevant FAQ entries found."
-    
-    context = "\n\n---\n\n".join([
-        f"FAQ Entry {i+1}:\n{doc.page_content}" 
-        for i, doc in enumerate(results)
-    ])
-    
-    return f"Found {len(results)} relevant FAQ entries:\n\n{context}"
-
+def get_transactions(limit: int = 5) -> str:
+    """Fetch the most recent transactions for the checking account."""
+    return "Recent Activity: Starbucks (-$6.50), Amazon (-$45.12), Payroll (+$2,800.00)"
 
 @tool
-def search_detailed_faq(query: str, num_results: int = 5) -> str:
-    """Search the FAQ knowledge base with more results for complex queries.
-    Use this when the initial search doesn't provide enough information.
-    
-    Args:
-        query: The search query
-        num_results: Number of results to retrieve (default: 5)
-        
-    Returns:
-        More comprehensive FAQ entries
-    """
-    results = faq_store.similarity_search(query, k=num_results)
-    
-    if not results:
-        return "No relevant FAQ entries found."
-    
-    context = "\n\n---\n\n".join([
-        f"FAQ Entry {i+1}:\n{doc.page_content}" 
-        for i, doc in enumerate(results)
-    ])
-    
-    return f"Found {len(results)} detailed FAQ entries:\n\n{context}"
+def search_banking_policies(query: str) -> str:
+    """Search for policies regarding overdrafts, transfers, or account limits."""
+    results = faq_store.similarity_search(query, k=2)
+    return "\n\n".join([doc.page_content for doc in results]) if results else "No policy found."
 
+TOOLS = [get_balance, get_transactions, search_banking_policies]
+TOOL_MAP = {t.name: t for t in TOOLS}
 
-@tool
-def reformulate_query(original_query: str, focus_aspect: str) -> str:
-    """Reformulate the query to focus on a specific aspect.
-    Use this when you need to search for a different angle of the question.
-    
-    Args:
-        original_query: The original user question
-        focus_aspect: The specific aspect to focus on (e.g., "pricing", "activation", "troubleshooting")
-        
-    Returns:
-        A reformulated query focused on the specified aspect
-    """
-    reformulated = f"{focus_aspect} related to {original_query}"
-    results = faq_store.similarity_search(reformulated, k=3)
-    
-    if not results:
-        return f"No results found for aspect: {focus_aspect}"
-    
-    context = "\n\n---\n\n".join([
-        f"Entry {i+1}:\n{doc.page_content}" 
-        for i, doc in enumerate(results)
-    ])
-    
-    return f"Results for '{focus_aspect}' aspect:\n\n{context}"
+# --- 3. LangGraph Logic (The Fix) ---
 
+class AgentState(TypedDict):
+    # CRITICAL FIX: Use operator.add to append messages instead of overwriting the list
+    messages: Annotated[List[BaseMessage], operator.add]
 
-tools = [search_faq, search_detailed_faq, reformulate_query]
+SYSTEM_PROMPT = "You are a Wells Fargo Assistant. Use tools to provide accurate account and policy info."
 
-system_prompt = """You are a helpful FAQ assistant with access to a knowledge base and user memory.
+def get_llm():
+    return ChatBedrock(model_id=MODEL_ID, region_name=REGION, system=SYSTEM_PROMPT).bind_tools(TOOLS)
 
-Your goal is to answer user questions accurately using the available tools while remembering user preferences.
+def call_model(state: AgentState):
+    # The LLM sees the full history because of operator.add
+    response = get_llm().invoke(state["messages"])
+    return {"messages": [response]}
 
-Guidelines:
-1. Check if you have relevant user preferences or history from previous conversations
-2. Use the search_faq tool to find relevant information from the knowledge base
-3. If the query is complex, use reformulate_query to search different aspects
-4. Personalize responses based on user preferences when relevant
-5. Always provide a clear, concise answer based on the retrieved information
-6. If you cannot find relevant information, clearly state that
+def execute_tools(state: AgentState):
+    last_message = state["messages"][-1]
+    tool_messages = []
+    for tool_call in last_message.tool_calls:
+        tool_func = TOOL_MAP[tool_call["name"]]
+        output = tool_func.invoke(tool_call["args"])
+        tool_messages.append(ToolMessage(content=str(output), tool_call_id=tool_call["id"]))
+    return {"messages": tool_messages}
 
-Think step-by-step and use tools strategically to provide the best answer."""
+def router(state: AgentState):
+    last_msg = state["messages"][-1]
+    if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
+        return "tools"
+    return "end"
 
-def get_or_create_agent(actor_id: str, session_id: str) -> Agent:
-    """
-    Create or reuse a global Strands agent configured with AgentCore memory and code execution.
-    """
-    global _agent
+# Graph construction
+builder = StateGraph(AgentState)
+builder.add_node("agent", call_model)
+builder.add_node("tools", execute_tools)
+builder.add_edge(START, "agent")
+builder.add_conditional_edges("agent", router, {"tools": "tools", "end": END})
+builder.add_edge("tools", "agent")
 
-    if _agent is None:
-        memory_config = AgentCoreMemoryConfig(
-            memory_id=MEMORY_ID,
-            session_id=session_id,
-            actor_id=actor_id,
-            retrieval_config={
-                f"/users/{actor_id}/facts": RetrievalConfig(
-                    top_k=3, relevance_score=0.5
-                ),
-                f"/users/{actor_id}/preferences": RetrievalConfig(
-                    top_k=3, relevance_score=0.5
-                ),
-            },
-        )
+AGENT_GRAPH = builder.compile()
 
-        _agent = Agent(
-            model=MODEL_ID,
-            session_manager=AgentCoreMemorySessionManager(memory_config, REGION),
-            system_prompt=system_prompt,
-            tools=tools,
-        )
-
-    return _agent
-
-
-def _validate_environment(state: AgentState) -> dict[str, str]:
-    if not MEMORY_ID:
-        return {
-            "error": "Memory not configured. Set BEDROCK_AGENTCORE_MEMORY_ID environment variable."
-        }
-    return {}
-
-
-def _execute_agent(state: AgentState) -> dict[str, str]:
-    if state.get("error"):
-        return {}
-
-    agent = get_or_create_agent(state["actor_id"], state["session_id"])
-    prompt = state["prompt"]
-
-    try:
-        result = agent(prompt)
-        response = result.message.get("content", [{}])[0].get("text", str(result))
-        return {"response": response}
-    except Exception as exc:
-        return {"error": str(exc)}
-
-
-def _ensure_response(state: AgentState) -> AgentOutput:
-    if state.get("error"):
-        return {"response": state["error"]}
-
-    return {
-        "response": state.get(
-            "response", "Sorry, I could not generate a response."
-        )
-    }
-
-
-def build_agent_graph() -> Any:
-    graph = StateGraph(state_schema=AgentState, output_schema=AgentOutput)
-    graph.add_node("validate_environment", _validate_environment)
-    graph.add_node("execute_agent", _execute_agent)
-    graph.add_node("ensure_response", _ensure_response)
-    graph.add_edge(START, "validate_environment")
-    graph.add_edge("validate_environment", "execute_agent")
-    graph.add_edge("execute_agent", "ensure_response")
-    graph.add_edge("ensure_response", END)
-    return graph.compile()
-
-
-AGENT_GRAPH = build_agent_graph()
-
-
+# --- 4. Entrypoint ---
 @app.entrypoint
 def invoke(payload, context):
-    actor_id = (
-        context.request_headers.get(
-            "X-Amzn-Bedrock-AgentCore-Runtime-Custom-Actor-Id", "user"
-        )
-        if context.request_headers
-        else "user"
-    )
-    session_id = context.session_id or "default_session"
-    prompt = payload.get("prompt", "Hello!")
-
-    result = AGENT_GRAPH.invoke(
-        {
-            "prompt": prompt,
-            "actor_id": actor_id,
-            "session_id": session_id,
-        }
-    )
-
-    return {"response": result["response"]}
-
+    prompt = payload.get("prompt", "")
+    # Initializing with a list—the reducer takes care of the rest
+    result = AGENT_GRAPH.invoke({"messages": [HumanMessage(content=prompt)]})
+    
+    # Get the last AI message
+    for msg in reversed(result["messages"]):
+        if isinstance(msg, AIMessage) and msg.content:
+            return {"response": msg.content}
+    return {"response": "I encountered an issue retrieving your data."}
 
 if __name__ == "__main__":
     app.run()
