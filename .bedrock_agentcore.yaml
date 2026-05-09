@@ -1,4 +1,4 @@
-default_agent: checking_agent
+default_agent: checking_account_agent_memory
 agents:
   checking_agent:
     name: checking_agent
@@ -42,6 +42,126 @@ agents:
       memory_id: checking_agent_mem-tQCrIQE9uZ
       memory_arn: arn:aws:bedrock-agentcore:us-east-1:974346102733:memory/checking_agent_mem-tQCrIQE9uZ
       memory_name: checking_agent_mem
+      event_expiry_days: 30
+      first_invoke_memory_check_done: true
+      was_created_by_toolkit: false
+    identity:
+      credential_providers: []
+      workload: null
+    aws_jwt:
+      enabled: false
+      audiences: []
+      signing_algorithm: ES384
+      issuer_url: null
+      duration_seconds: 300
+    authorizer_configuration: null
+    request_header_configuration: null
+    oauth_configuration: null
+    api_key_env_var_name: null
+    api_key_credential_provider_name: null
+    is_generated_by_agentcore_create: false
+  checking_account_agent:
+    name: checking_account_agent
+    language: python
+    node_version: '20'
+    entrypoint: /Users/steveli/Documents/GitHub/chat_bot/checking_account_agent.py
+    deployment_type: container
+    runtime_type: null
+    platform: linux/arm64
+    container_runtime: none
+    source_path: /Users/steveli/Documents/GitHub/chat_bot
+    aws:
+      execution_role: arn:aws:iam::974346102733:role/AmazonBedrockAgentCoreSDKRuntime-us-east-1-23b8cc667e
+      execution_role_auto_create: false
+      account: '974346102733'
+      region: us-east-1
+      ecr_repository: 974346102733.dkr.ecr.us-east-1.amazonaws.com/bedrock-agentcore-checking_account_agent
+      ecr_auto_create: false
+      s3_path: null
+      s3_auto_create: false
+      network_configuration:
+        network_mode: PUBLIC
+        network_mode_config: null
+      protocol_configuration:
+        server_protocol: HTTP
+      observability:
+        enabled: true
+      lifecycle_configuration:
+        idle_runtime_session_timeout: null
+        max_lifetime: null
+    bedrock_agentcore:
+      agent_id: checking_account_agent-OrhuiDDE2Q
+      agent_arn: arn:aws:bedrock-agentcore:us-east-1:974346102733:runtime/checking_account_agent-OrhuiDDE2Q
+      agent_session_id: ffa181e3-fd63-4923-832d-48179e647550
+    codebuild:
+      project_name: bedrock-agentcore-checking_account_agent-builder
+      execution_role: arn:aws:iam::974346102733:role/AmazonBedrockAgentCoreSDKCodeBuild-us-east-1-23b8cc667e
+      source_bucket: bedrock-agentcore-codebuild-sources-974346102733-us-east-1
+    memory:
+      mode: STM_AND_LTM
+      memory_id: checking_account_agent_mem-Ca8NxV3fGq
+      memory_arn: arn:aws:bedrock-agentcore:us-east-1:974346102733:memory/checking_account_agent_mem-Ca8NxV3fGq
+      memory_name: checking_account_agent_mem
+      event_expiry_days: 30
+      first_invoke_memory_check_done: true
+      was_created_by_toolkit: false
+    identity:
+      credential_providers: []
+      workload: null
+    aws_jwt:
+      enabled: false
+      audiences: []
+      signing_algorithm: ES384
+      issuer_url: null
+      duration_seconds: 300
+    authorizer_configuration: null
+    request_header_configuration: null
+    oauth_configuration: null
+    api_key_env_var_name: null
+    api_key_credential_provider_name: null
+    is_generated_by_agentcore_create: false
+  checking_account_agent_memory:
+    name: checking_account_agent_memory
+    language: python
+    node_version: '20'
+    entrypoint: /Users/steveli/Documents/GitHub/chat_bot/checking_account_agent_memory.py
+    deployment_type: container
+    runtime_type: null
+    platform: linux/arm64
+    container_runtime: none
+    source_path: /Users/steveli/Documents/GitHub/chat_bot
+    aws:
+      execution_role: arn:aws:iam::974346102733:role/AmazonBedrockAgentCoreSDKRuntime-us-east-1-3a041189e6
+      execution_role_auto_create: false
+      account: '974346102733'
+      region: us-east-1
+      ecr_repository: 974346102733.dkr.ecr.us-east-1.amazonaws.com/bedrock-agentcore-checking_account_agent_memory
+      ecr_auto_create: false
+      s3_path: null
+      s3_auto_create: false
+      network_configuration:
+        network_mode: PUBLIC
+        network_mode_config: null
+      protocol_configuration:
+        server_protocol: HTTP
+      observability:
+        enabled: true
+      lifecycle_configuration:
+        idle_runtime_session_timeout: null
+        max_lifetime: null
+    bedrock_agentcore:
+      agent_id: checking_account_agent_memory-3uM3OQGcEA
+      agent_arn: arn:aws:bedrock-agentcore:us-east-1:974346102733:runtime/checking_account_agent_memory-3uM3OQGcEA
+      agent_session_id: bfab5402-47a7-40b0-8daf-f1886dc6f6ed
+    codebuild:
+      project_name: bedrock-agentcore-checking_account_agent_memory-builder
+      execution_role: arn:aws:iam::974346102733:role/AmazonBedrockAgentCoreSDKCodeBuild-us-east-1-3a041189e6
+      source_bucket: bedrock-agentcore-codebuild-sources-974346102733-us-east-1
+    memory:
+      mode: STM_AND_LTM
+      memory_id: checking_account_agent_memory_mem-YWCQba5O3M
+      memory_arn: arn:aws:bedrock-agentcore:us-east-1:974346102733:memory/checking_account_agent_memory_mem-YWCQba5O3M
+      memory_name: checking_account_agent_memory_mem
       event_expiry_days: 30
       first_invoke_memory_check_done: true
       was_created_by_toolkit: false
