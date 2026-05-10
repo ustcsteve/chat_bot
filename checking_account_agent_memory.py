@@ -64,11 +64,17 @@ SYSTEM_PROMPT = "You are a Wells Fargo Assistant. Use the conversation history t
 def get_llm():
     return ChatBedrock(model_id=MODEL_ID, region_name=REGION, system=SYSTEM_PROMPT).bind_tools(TOOLS)
 
-# def call_model(state: AgentState, config: dict):
+def call_model(state: AgentState):    
+    response = get_llm().invoke(state["messages"])
+    return {"messages": [response]}
+# def call_model(state: AgentState, config: dict = None): # Added default None to prevent TypeError
 #     """
-#     LLM Node: Logs the current message history to verify LangGraph memory usage.
+#     LLM Node: Logs current message history. 
+#     The 'config' is automatically injected by LangGraph if provided during invoke().
 #     """
-#     thread_id = config.get("configurable", {}).get("thread_id", "unknown")
+#     # Safe retrieval of thread_id
+#     config = config or {}
+#     thread_id = config.get("configurable", {}).get("thread_id", "no_thread_found")
     
 #     print("\n" + "="*50)
 #     print(f"DEBUG: MEMORY LOG (Thread: {thread_id})")
@@ -76,34 +82,12 @@ def get_llm():
     
 #     for i, msg in enumerate(state['messages']):
 #         role = "User" if isinstance(msg, HumanMessage) else "Assistant"
-#         snippet = msg.content[:60].replace("\n", " ")
+#         snippet = msg.content[:60]
 #         print(f"  {i}. [{role}]: {snippet}...")
-    
 #     print("="*50 + "\n")
     
 #     response = get_llm().invoke(state["messages"])
 #     return {"messages": [response]}
-def call_model(state: AgentState, config: dict = None): # Added default None to prevent TypeError
-    """
-    LLM Node: Logs current message history. 
-    The 'config' is automatically injected by LangGraph if provided during invoke().
-    """
-    # Safe retrieval of thread_id
-    config = config or {}
-    thread_id = config.get("configurable", {}).get("thread_id", "no_thread_found")
-    
-    print("\n" + "="*50)
-    print(f"DEBUG: MEMORY LOG (Thread: {thread_id})")
-    print(f"Total messages in state: {len(state['messages'])}")
-    
-    for i, msg in enumerate(state['messages']):
-        role = "User" if isinstance(msg, HumanMessage) else "Assistant"
-        snippet = msg.content[:60]
-        print(f"  {i}. [{role}]: {snippet}...")
-    print("="*50 + "\n")
-    
-    response = get_llm().invoke(state["messages"])
-    return {"messages": [response]}
 
 def execute_tools(state: AgentState):
     last_message = state["messages"][-1]
@@ -165,7 +149,4 @@ if __name__ == "__main__":
 #         config=config
 #     )
     
-#     for msg in reversed(result["messages"]):
-#         if isinstance(msg, AIMessage) and msg.content:
-#             print({"response": msg.content})
-#     print({"response": "I encountered an error retrieving that information."})
+#     print(result['messages'][-1].content)
