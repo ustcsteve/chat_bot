@@ -1,14 +1,14 @@
 import csv
 import os
 import operator
-from typing import List, Annotated, Union
+from typing import List, Annotated
 from typing_extensions import NotRequired, TypedDict
 
 from langchain_aws import BedrockEmbeddings, ChatBedrock
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 
 from langgraph.graph import END, START, StateGraph
-from langgraph.checkpoint.memory import MemorySaver # Added for persistence
+from langgraph.checkpoint.memory import MemorySaver 
 from langchain_core.tools import tool
 from langchain_core.documents import Document
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
@@ -18,7 +18,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 app = BedrockAgentCoreApp()
 
 # Configuration
-MEMORY_ID = os.getenv("BEDROCK_AGENTCORE_MEMORY_ID") # Used by AgentCore for long-term storage
+MEMORY_ID = os.getenv("BEDROCK_AGENTCORE_MEMORY_ID")
 REGION = os.getenv("AWS_REGION", "us-east-1")
 MODEL_ID = "us.amazon.nova-lite-v1:0"
 
@@ -54,17 +54,54 @@ def search_banking_policies(query: str) -> str:
 TOOLS = [get_balance, search_banking_policies]
 TOOL_MAP = {t.name: t for t in TOOLS}
 
-# --- 3. LangGraph Logic with Memory ---
+# --- 3. LangGraph Logic with Memory Logging ---
 
 class AgentState(TypedDict):
     messages: Annotated[List[BaseMessage], operator.add]
 
-SYSTEM_PROMPT = "You are a Wells Fargo Assistant. Maintain context of the user's previous questions."
+SYSTEM_PROMPT = "You are a Wells Fargo Assistant. Use the conversation history to answer follow-up questions."
 
 def get_llm():
     return ChatBedrock(model_id=MODEL_ID, region_name=REGION, system=SYSTEM_PROMPT).bind_tools(TOOLS)
 
-def call_model(state: AgentState):
+# def call_model(state: AgentState, config: dict):
+#     """
+#     LLM Node: Logs the current message history to verify LangGraph memory usage.
+#     """
+#     thread_id = config.get("configurable", {}).get("thread_id", "unknown")
+    
+#     print("\n" + "="*50)
+#     print(f"DEBUG: MEMORY LOG (Thread: {thread_id})")
+#     print(f"Total messages in state: {len(state['messages'])}")
+    
+#     for i, msg in enumerate(state['messages']):
+#         role = "User" if isinstance(msg, HumanMessage) else "Assistant"
+#         snippet = msg.content[:60].replace("\n", " ")
+#         print(f"  {i}. [{role}]: {snippet}...")
+    
+#     print("="*50 + "\n")
+    
+#     response = get_llm().invoke(state["messages"])
+#     return {"messages": [response]}
+def call_model(state: AgentState, config: dict = None): # Added default None to prevent TypeError
+    """
+    LLM Node: Logs current message history. 
+    The 'config' is automatically injected by LangGraph if provided during invoke().
+    """
+    # Safe retrieval of thread_id
+    config = config or {}
+    thread_id = config.get("configurable", {}).get("thread_id", "no_thread_found")
+    
+    print("\n" + "="*50)
+    print(f"DEBUG: MEMORY LOG (Thread: {thread_id})")
+    print(f"Total messages in state: {len(state['messages'])}")
+    
+    for i, msg in enumerate(state['messages']):
+        role = "User" if isinstance(msg, HumanMessage) else "Assistant"
+        snippet = msg.content[:60]
+        print(f"  {i}. [{role}]: {snippet}...")
+    print("="*50 + "\n")
+    
     response = get_llm().invoke(state["messages"])
     return {"messages": [response]}
 
@@ -81,7 +118,7 @@ def router(state: AgentState):
         return "tools"
     return "end"
 
-# Initialize MemorySaver
+# Persistence layer
 memory_checkpointer = MemorySaver()
 
 builder = StateGraph(AgentState)
@@ -91,7 +128,6 @@ builder.add_edge(START, "agent")
 builder.add_conditional_edges("agent", router, {"tools": "tools", "end": END})
 builder.add_edge("tools", "agent")
 
-# CRITICAL: Compile with checkpointer
 AGENT_GRAPH = builder.compile(checkpointer=memory_checkpointer)
 
 # --- 4. Bedrock Entrypoint ---
@@ -99,12 +135,11 @@ AGENT_GRAPH = builder.compile(checkpointer=memory_checkpointer)
 @app.entrypoint
 def invoke(payload, context):
     prompt = payload.get("prompt", "")
-    # Use AgentCore session_id to define the LangGraph thread
     session_id = context.session_id or "default_session"
     
+    # We pass the session_id to 'thread_id' so MemorySaver can retrieve the right history
     config = {"configurable": {"thread_id": session_id}}
     
-    # LangGraph will automatically retrieve history for this thread_id
     result = AGENT_GRAPH.invoke(
         {"messages": [HumanMessage(content=prompt)]},
         config=config
@@ -113,7 +148,24 @@ def invoke(payload, context):
     for msg in reversed(result["messages"]):
         if isinstance(msg, AIMessage) and msg.content:
             return {"response": msg.content}
-    return {"response": "I'm having trouble remembering our conversation."}
+    return {"response": "I encountered an error retrieving that information."}
 
 if __name__ == "__main__":
     app.run()
+
+# if __name__ == "__main__":
+#     prompt = input("Enter your prompt: ")
+#     session_id = input("Enter your session ID: ")
+    
+#     # We pass the session_id to 'thread_id' so MemorySaver can retrieve the right history
+#     config = {"configurable": {"thread_id": session_id}}
+    
+#     result = AGENT_GRAPH.invoke(
+#         {"messages": [HumanMessage(content=prompt)]},
+#         config=config
+#     )
+    
+#     for msg in reversed(result["messages"]):
+#         if isinstance(msg, AIMessage) and msg.content:
+#             print({"response": msg.content})
+#     print({"response": "I encountered an error retrieving that information."})

@@ -152,7 +152,7 @@ agents:
     bedrock_agentcore:
       agent_id: checking_account_agent_memory-3uM3OQGcEA
       agent_arn: arn:aws:bedrock-agentcore:us-east-1:974346102733:runtime/checking_account_agent_memory-3uM3OQGcEA
-      agent_session_id: bfab5402-47a7-40b0-8daf-f1886dc6f6ed
+      agent_session_id: 12345-12345-12345-12345-12345-12345-B
     codebuild:
       project_name: bedrock-agentcore-checking_account_agent_memory-builder
       execution_role: arn:aws:iam::974346102733:role/AmazonBedrockAgentCoreSDKCodeBuild-us-east-1-3a041189e6
